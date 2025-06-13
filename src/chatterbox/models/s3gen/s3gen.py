@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+logger = logging.getLogger(__name__)
 
 import numpy as np
 import torch
@@ -122,7 +123,7 @@ class S3Token2Mel(torch.nn.Module):
             ref_wav = ref_wav.unsqueeze(0)  # (B, L)
 
         if ref_wav.size(1) > 10 * ref_sr:
-            print("WARNING: cosydec received ref longer than 10s")
+            logging.warning("cosydec received ref longer than 10s")
 
         ref_wav_24 = ref_wav
         if ref_sr != S3GEN_SR:
