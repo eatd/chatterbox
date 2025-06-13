@@ -18,6 +18,7 @@
 """HIFI-GAN"""
 
 from typing import Dict, Optional, List
+import logging
 import numpy as np
 from scipy.signal import get_window
 import torch
@@ -31,6 +32,7 @@ from torch import nn, sin, pow
 from torch.nn import Parameter
 
 
+logger = logging.getLogger(__name__)
 class Snake(nn.Module):
     '''
     Implementation of a sine-based periodic activation function
@@ -380,7 +382,7 @@ class HiFTGenerator(nn.Module):
         self.f0_predictor = f0_predictor
 
     def remove_weight_norm(self):
-        print('Removing weight norm...')
+        logging.info('Removing weight norm...')
         for l in self.ups:
             remove_weight_norm(l)
         for l in self.resblocks:

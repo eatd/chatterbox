@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+import logging
 
 import librosa
 import torch
@@ -17,6 +18,8 @@ from .models.t3.modules.cond_enc import T3Cond
 
 
 REPO_ID = "ResembleAI/chatterbox"
+
+logger = logging.getLogger(__name__)
 
 
 def punc_norm(text: str) -> str:
@@ -169,9 +172,9 @@ class ChatterboxTTS:
         # Check if MPS is available on macOS
         if device == "mps" and not torch.backends.mps.is_available():
             if not torch.backends.mps.is_built():
-                print("MPS not available because the current PyTorch install was not built with MPS enabled.")
+                logging.warning("MPS not available because the current PyTorch install was not built with MPS enabled.")
             else:
-                print("MPS not available because the current MacOS version is not 12.3+ and/or you do not have an MPS-enabled device on this machine.")
+                logging.warning("MPS not available because the current MacOS version is not 12.3+ and/or you do not have an MPS-enabled device on this machine.")
             device = "cpu"
 
         for fpath in ["ve.safetensors", "t3_cfg.safetensors", "s3gen.safetensors", "tokenizer.json", "conds.pt"]:

@@ -1,4 +1,6 @@
 from pathlib import Path
+import logging
+logger = logging.getLogger(__name__)
 
 import librosa
 import torch
@@ -63,9 +65,9 @@ class ChatterboxVC:
         # Check if MPS is available on macOS
         if device == "mps" and not torch.backends.mps.is_available():
             if not torch.backends.mps.is_built():
-                print("MPS not available because the current PyTorch install was not built with MPS enabled.")
+                logging.warning("MPS not available because the current PyTorch install was not built with MPS enabled.")
             else:
-                print("MPS not available because the current MacOS version is not 12.3+ and/or you do not have an MPS-enabled device on this machine.")
+                logging.warning("MPS not available because the current MacOS version is not 12.3+ and/or you do not have an MPS-enabled device on this machine.")
             device = "cpu"
             
         for fpath in ["s3gen.safetensors", "conds.pt"]:
