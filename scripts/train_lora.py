@@ -102,10 +102,27 @@ def collate_fn(batch):
 
 
 def attach_lora(model, rank=8):
+    """Attach LoRA adapters to every ``LoRACompatibleLinear`` module in ``model``.
+
+    Returns the number of adapters that were added.
+    """
+
+    attached = 0
     for module in model.modules():
         if isinstance(module, LoRACompatibleLinear):
-            module.set_lora_layer(LoRALinearLayer(module.in_features, module.out_features, rank))
+            lora = LoRALinearLayer(module.in_features, module.out_features, rank)
+            lora.to(module.weight.device, dtype=module.weight.dtype)
+            module.set_lora_layer(lora)
             module.weight.requires_grad_(False)
+            attached += 1
+
+    if attached == 0:
+        raise RuntimeError(
+            "Could not find any LoRA-compatible linear layers. "
+            "This likely means the architecture changed and the script needs updating."
+        )
+
+    return attached
 
 
 def lora_parameters(model):
@@ -124,15 +141,26 @@ def train(args):
     device = args.device
     model = ChatterboxTTS.from_pretrained(device=device)
 
-    attach_lora(model, rank=args.rank)
+    num_adapters = attach_lora(model, rank=args.rank)
+
+    # Ensure the components that host the adapters run in training mode so the
+    # new parameters actually update and any dropout behaves as expected.
+    model.t3.train()
+    model.s3gen.train()
+    model.s3gen.flow.train()
 
     t3_tok = model.tokenizer
     s3_tok = S3Tokenizer("speech_tokenizer_v2_25hz")
+    s3_tok.eval()
 
     ds = TextAudioDataset(args.manifest, t3_tok, s3_tok, model.ve, device)
     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn)
 
-    opt = torch.optim.AdamW(lora_parameters(model), lr=args.lr)
+    params = lora_parameters(model)
+    if not params:
+        raise RuntimeError("No LoRA parameters were registered for optimisation.")
+
+    opt = torch.optim.AdamW(params, lr=args.lr)
 
     os.makedirs(args.outdir, exist_ok=True)
 
@@ -178,7 +206,11 @@ def train(args):
             opt.zero_grad()
 
         ckpt = os.path.join(args.outdir, f"lora_epoch_{epoch}.pt")
-        torch.save(lora_state_dict(model), ckpt)
+        torch.save({
+            "lora_state_dict": lora_state_dict(model),
+            "rank": args.rank,
+            "num_adapters": num_adapters,
+        }, ckpt)
         print(f"saved {ckpt}")
 
 
