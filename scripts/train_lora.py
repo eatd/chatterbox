@@ -1,5 +1,6 @@
 import argparse
 import os
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
@@ -18,51 +19,61 @@ from chatterbox.models.s3gen.utils.mask import make_pad_mask
 class TextAudioDataset(Dataset):
     """Simple dataset that loads text and audio pairs from a manifest file."""
 
-    def __init__(self, manifest_path: str, t3_tok, s3_tok: S3Tokenizer, ve, device: str) -> None:
+    def __init__(self, manifest_path: str, t3_tok, s3_tok: S3Tokenizer, ve) -> None:
         self.items = []
         with open(manifest_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
+                if "|" not in line:
+                    raise ValueError(
+                        "Manifest entries must contain a text/audio separator '|' — "
+                        f"received: {line!r}"
+                    )
                 # Each line: <text>|<wav_path>
                 text, wav = line.split("|", 1)
                 self.items.append((text, wav))
+        if not self.items:
+            raise ValueError("The provided manifest did not contain any usable samples.")
         self.t3_tok = t3_tok
         self.s3_tok = s3_tok
         self.ve = ve
-        self.device = device
 
     def __len__(self):
         return len(self.items)
 
     def __getitem__(self, idx):
         text, wav_path = self.items[idx]
-        wav, sr = ta.load(wav_path)
+        wav_path = Path(wav_path).expanduser()
+        if not wav_path.exists():
+            raise FileNotFoundError(f"Referenced audio file '{wav_path}' does not exist.")
+        wav, sr = ta.load(str(wav_path))
         if sr != S3_SR:
             wav = ta.functional.resample(wav, sr, S3_SR)
-        wav = wav.squeeze(0)
+        if wav.size(0) > 1:
+            wav = wav.mean(dim=0)
+        else:
+            wav = wav.squeeze(0)
 
         speech_tokens, speech_token_len = self.s3_tok(wav.unsqueeze(0))
-        mel = mel_spectrogram(wav).transpose(0, 1)  # (T, 80)
-        mel_len = torch.tensor([mel.size(0)])
+        mel = mel_spectrogram(wav).transpose(0, 1).float()  # (T, 80)
+        mel_len = torch.tensor(mel.size(0), dtype=torch.long)
 
         emb = self.ve.embeds_from_wavs([wav.numpy()], sample_rate=S3_SR)
         emb = torch.from_numpy(emb).float()
 
         text_tokens = self.t3_tok.text_to_tokens(text).squeeze(0)
-        text_tokens = torch.cat([
-            torch.tensor([T3Config.start_text_token]),
-            text_tokens,
-            torch.tensor([T3Config.stop_text_token]),
-        ])
-        text_token_len = torch.tensor([text_tokens.numel()])
+        start = torch.tensor([T3Config.start_text_token], dtype=text_tokens.dtype)
+        stop = torch.tensor([T3Config.stop_text_token], dtype=text_tokens.dtype)
+        text_tokens = torch.cat([start, text_tokens, stop])
+        text_token_len = torch.tensor(text_tokens.numel(), dtype=torch.long)
 
         return {
             "text_tokens": text_tokens,
             "text_token_lens": text_token_len,
-            "speech_tokens": speech_tokens.squeeze(0),
-            "speech_token_lens": speech_token_len,
+            "speech_tokens": speech_tokens.squeeze(0).long(),
+            "speech_token_lens": speech_token_len.squeeze(0).long(),
             "speech_feat": mel,
             "speech_feat_len": mel_len,
             "embedding": emb.squeeze(0),
@@ -74,7 +85,7 @@ def collate_fn(batch):
     out = {}
     for k in keys:
         if k.endswith("lens"):
-            out[k] = torch.stack([b[k] for b in batch])[:, 0]
+            out[k] = torch.stack([b[k] for b in batch])
         else:
             out[k] = [b[k] for b in batch]
 
@@ -138,7 +149,7 @@ def lora_state_dict(model):
 
 
 def train(args):
-    device = args.device
+    device = str(args.device)
     model = ChatterboxTTS.from_pretrained(device=device)
 
     num_adapters = attach_lora(model, rank=args.rank)
@@ -153,8 +164,15 @@ def train(args):
     s3_tok = S3Tokenizer("speech_tokenizer_v2_25hz")
     s3_tok.eval()
 
-    ds = TextAudioDataset(args.manifest, t3_tok, s3_tok, model.ve, device)
-    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn)
+    ds = TextAudioDataset(args.manifest, t3_tok, s3_tok, model.ve)
+    dl = DataLoader(
+        ds,
+        batch_size=args.batch_size,
+        shuffle=True,
+        collate_fn=collate_fn,
+        num_workers=args.num_workers,
+        pin_memory=device.startswith("cuda"),
+    )
 
     params = lora_parameters(model)
     if not params:
@@ -184,12 +202,18 @@ def train(args):
             h = model.s3gen.flow.encoder_proj(h)
             h, _ = model.s3gen.flow.length_regulator(h, batch["speech_feat_len"])
 
-            conds = torch.zeros(batch["speech_feat"].shape, device=device)
+            conds = torch.zeros(
+                batch["speech_feat"].shape,
+                device=device,
+                dtype=batch["speech_feat"].dtype,
+            )
             for i, j in enumerate(batch["speech_feat_len"]):
-                if torch.rand(1) < 0.5:
+                if torch.rand(1, device=device) < 0.5:
                     continue
-                index = torch.randint(0, int(0.3 * j.item()), (1,))
-                conds[i, :, : index] = batch["speech_feat"][i, :, : index]
+                upper = max(1, int(0.3 * j.item()))
+                prefix = torch.randint(0, upper, (1,), device=device).item()
+                if prefix > 0:
+                    conds[i, :, :prefix] = batch["speech_feat"][i, :, :prefix]
             mask_feat = (~make_pad_mask(batch["speech_feat_len"])).to(h)
             feat = F.interpolate(batch["speech_feat"].unsqueeze(1), size=h.shape[1:], mode="nearest").squeeze(1)
             loss_flow, _ = model.s3gen.flow.decoder.compute_loss(
@@ -203,13 +227,14 @@ def train(args):
             loss = loss_text + loss_speech + loss_flow
             loss.backward()
             opt.step()
-            opt.zero_grad()
+            opt.zero_grad(set_to_none=True)
 
         ckpt = os.path.join(args.outdir, f"lora_epoch_{epoch}.pt")
         torch.save({
             "lora_state_dict": lora_state_dict(model),
             "rank": args.rank,
             "num_adapters": num_adapters,
+            "epoch": epoch,
         }, ckpt)
         print(f"saved {ckpt}")
 
@@ -218,11 +243,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=str, required=True, help="txt file with '<text>|<wav>' per line")
     parser.add_argument("--outdir", type=str, default="lora_ckpts")
-    parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--rank", type=int, default=8)
-    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--batch_size", type=int, default=4, help="Number of samples per optimisation step.")
+    parser.add_argument("--epochs", type=int, default=1, help="How many passes to make over the manifest during training.")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate for AdamW.")
+    parser.add_argument("--rank", type=int, default=8, help="LoRA rank to attach to compatible linear layers.")
+    parser.add_argument("--device", type=str, default="cuda", help="Device identifier passed to PyTorch (e.g. 'cuda:0').")
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=2,
+        help="DataLoader worker processes (set to 0 to disable multiprocessing).",
+    )
     args = parser.parse_args()
 
     train(args)

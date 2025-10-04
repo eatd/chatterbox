@@ -14,7 +14,7 @@ AudioLike = Union[str, Path]
 def _coerce_to_paths(audio: Union[AudioLike, Sequence[AudioLike]]) -> Sequence[Path]:
     """Convert an input that may be a single path or a list of paths into ``Path`` objects."""
     if isinstance(audio, (str, Path)):
-        return [Path(audio)]
+        return [Path(audio).expanduser()]
 
     if isinstance(audio, Sequence):
         if not audio:
@@ -26,7 +26,7 @@ def _coerce_to_paths(audio: Union[AudioLike, Sequence[AudioLike]]) -> Sequence[P
                     "Reference audio entries must be file paths (str or Path); "
                     f"received unsupported type: {type(item)!r}"
                 )
-            coerced.append(Path(item))
+            coerced.append(Path(item).expanduser())
         return coerced
 
     raise TypeError(
@@ -75,6 +75,8 @@ def load_and_condition_reference(
 
     processed: list[np.ndarray] = []
     for path in paths:
+        if not path.exists():
+            raise FileNotFoundError(f"Reference audio file '{path}' does not exist.")
         wav, _ = librosa.load(path.as_posix(), sr=target_sr)
         wav = trim_silence(wav, top_db=top_db)
         wav = loudness_normalise(wav, target_db=target_loudness_db)
@@ -95,7 +97,10 @@ def load_source_audio(
     normalise: bool = False,
 ) -> np.ndarray:
     """Load a source waveform and optionally trim and normalise it."""
-    wav, _ = librosa.load(Path(audio_path).as_posix(), sr=target_sr)
+    path = Path(audio_path).expanduser()
+    if not path.exists():
+        raise FileNotFoundError(f"Source audio file '{path}' does not exist.")
+    wav, _ = librosa.load(path.as_posix(), sr=target_sr)
     if top_db is not None:
         wav = trim_silence(wav, top_db=top_db)
     if normalise:
