@@ -43,6 +43,8 @@ If you like the model but need to scale or tune it for higher accuracy, check ou
 pip install chatterbox-tts
 ```
 
+> **Heads-up:** We pin Gradio to the 4.x line (`<5`) so the package stays compatible with English-only deployments. Multilingual tokenizers such as `russian-text-stresser` depend on SpaCy builds that require an older Typer release, which conflicts with Gradio 5.x.
+
 Alternatively, you can install from source:
 ```shell
 # conda create -yn chatterbox python=3.11
@@ -92,8 +94,8 @@ You can fine-tune the model with LoRA adapters using `scripts/train_lora.py`:
 python scripts/train_lora.py --manifest train_list.txt --device cuda
 ```
 
-# Supported Lanugage
-Currenlty only English.
+# Supported Language
+Currently only English.
 
 # Acknowledgements
 - [Cosyvoice](https://github.com/FunAudioLLM/CosyVoice)

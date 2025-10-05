@@ -1,47 +1,25 @@
 # Upstream Comparison Snapshot
 
-This note captures the main differences between our working branch (`work`) and the current `resemble-ai/chatterbox` `master` branch as of 2025-10-01. It highlights upstream additions that we should consider porting, along with fork-specific functionality that we should preserve.
+This note captures the main differences between our working branch (`work`) and the current `resemble-ai/chatterbox` `master` branch as of 2025-10-01. It highlights upstream additions we are intentionally deferring, along with fork-specific functionality that we should preserve.
 
 ## Divergence at a Glance
 
 - **Fork-first additions.** Our branch ships a guided voice cloning Gradio app, shared audio-conditioning helpers, and a LoRA fine-tuning script to support cloning workflows end to end. These are not present upstream and remain differentiators we should keep while merging other changes.
-- **Upstream leap to multilingual.** The upstream repository has moved to a multilingual release (`v0.1.4`) with 23 supported languages, a dedicated multilingual inference class, and new UI/packaging assets to showcase the expanded coverage.
+- **Upstream leap to multilingual.** The upstream repository has moved to a multilingual release (`v0.1.4`) with 23 supported languages, a dedicated multilingual inference class, and new UI/packaging assets to showcase the expanded coverage, but we are deferring these additions to keep the fork English-only and dependency-light.
 
-## Upstream Enhancements Worth Porting
+## Upstream Enhancements We Are Deferring
 
-### Multilingual inference stack
+### Multilingual inference stack (out of scope)
 
-The upstream release introduces `ChatterboxMultilingualTTS`, which wraps multilingual checkpoints, a language-aware tokenizer, and pre-baked conditional embeddings. The class exposes the same conditioning interface as the English model while adding a `language_id` switch and built-in support for 23 locale codes:
+The upstream branch ships a `ChatterboxMultilingualTTS` implementation, tokenizer updates, and pre-baked multilingual checkpoints. Shipping those assets would force us to depend on the `spacy` ecosystem (`spacy-pkuseg`, `pykakasi`, `russian-text-stresser`) whose Typer pin (`<0.10`) conflicts with the Typer version required by Gradio 5.x. Because our fork is intentionally English-only, we will not chase the multilingual modules or their dependencies for now.
 
-```
-from .models.tokenizers import MTLTokenizer
-...
-SUPPORTED_LANGUAGES = {
-  "ar": "Arabic",
-  "da": "Danish",
-  ...
-  "tr": "Turkish",
-  "zh": "Chinese",
-}
-...
-class ChatterboxMultilingualTTS:
-    def generate(self, text: str, language_id: str = "en", ...):
-        ...
-```
+### Multilingual Gradio workflow (not planned)
 
-Porting this module (and its checkpoint loader) would let our fork ship the multilingual weights alongside the existing English flow.
+Upstream's `multilingual_app.py` Blocks UI demonstrates the new locale options. Pulling it across would drag in the same dependency graph and testing overhead as the multilingual inference stack, so we are skipping it alongside the underlying model changes.
 
-### Multilingual Gradio workflow
+### Tokenizer / config churn (blocked on multilingual scope)
 
-Upstream now includes `multilingual_app.py`, a Gradio Blocks UI that mirrors our voice-cloning helper but layers in language presets, default reference clips, and helper copy for each locale. This script provides a ready-made UX to demonstrate multilingual zero-shot cloning without having to juggle manual prompt selection.
-
-### Tokenizer and dependency updates
-
-The `pyproject.toml` upstream was bumped to `v0.1.4`, pinning new text processing dependencies (`spacy-pkuseg`, `pykakasi`, `russian-text-stresser`) and aligning the runtime to Python 3.10+. The tokenizer module gained multilingual-aware logic to service the new model. We should align our package metadata and dependency set when ingesting the multilingual changes to avoid runtime mismatches.
-
-### Model configuration tweaks
-
-Supporting the multilingual checkpoints required updates in the `T3` config, alignment stream analyzer, and flow utilities to accept wider vocabularies and different sample rates. These structural tweaks arrive alongside the new tokenizer and should be merged to keep our inference stack compatible with future upstream releases.
+The tokenizer and model-config updates upstream primarily exist to service the multilingual release. Without adopting those checkpoints we would be carrying unused code and heavy dependencies. We will revisit once there is a pressing need for non-English voices.
 
 ## Fork Functionality to Preserve
 
