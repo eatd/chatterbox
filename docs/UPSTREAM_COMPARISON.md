@@ -4,7 +4,7 @@ This note captures the main differences between our working branch (`work`) and 
 
 ## Divergence at a Glance
 
-- **Fork-first additions.** Our branch ships a guided voice cloning Gradio app, shared audio-conditioning helpers, and a LoRA fine-tuning script to support cloning workflows end to end. These are not present upstream and remain differentiators we should keep while merging other changes.
+- **Fork-first additions.** Our branch ships a guided voice cloning Gradio app, shared audio-conditioning helpers, and a LoRA fine-tuning script to support cloning workflows end to end. These are not present upstream and remain differentiators we should keep while merging other changes. We now package the Gradio UI behind an optional `ui` extra so the core English library installs without Typer conflicts.
 - **Upstream leap to multilingual.** The upstream repository has moved to a multilingual release (`v0.1.4`) with 23 supported languages, a dedicated multilingual inference class, and new UI/packaging assets to showcase the expanded coverage, but we are deferring these additions to keep the fork English-only and dependency-light.
 
 ## Upstream Enhancements We Are Deferring

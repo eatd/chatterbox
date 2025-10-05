@@ -43,7 +43,13 @@ If you like the model but need to scale or tune it for higher accuracy, check ou
 pip install chatterbox-tts
 ```
 
-> **Heads-up:** We pin Gradio to the 4.x line (`<5`) so the package stays compatible with English-only deployments. Multilingual tokenizers such as `russian-text-stresser` depend on SpaCy builds that require an older Typer release, which conflicts with Gradio 5.x.
+This installs the English-only core library. Install the optional UI helpers (Gradio voice cloning app, WAV export utilities) with:
+
+```shell
+pip install "chatterbox-tts[ui]"
+```
+
+> **Why an extra?** Keeping Gradio and `soundfile` in an optional extra prevents Typer dependency conflicts triggered by multilingual SpaCy add-ons such as `russian-text-stresser`. Because this fork is English-only, the base package stays lean while letting you opt into the UI when needed.
 
 Alternatively, you can install from source:
 ```shell

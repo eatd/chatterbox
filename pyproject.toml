@@ -18,7 +18,11 @@ dependencies = [
     "diffusers==0.29.0",
     "resemble-perth==1.0.1",
     "conformer==0.3.2",
-    "safetensors==0.5.3",
+    "safetensors==0.5.3"
+]
+
+[project.optional-dependencies]
+ui = [
     "gradio>=4.44.0,<5",
     "soundfile>=0.12.1"
 ]
