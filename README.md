@@ -47,6 +47,14 @@ Arabic (ar) • Danish (da) • German (de) • Greek (el) • English (en) • 
 pip install chatterbox-tts
 ```
 
+This installs the English-only core library. Install the optional UI helpers (Gradio voice cloning app, WAV export utilities) with:
+
+```shell
+pip install "chatterbox-tts[ui]"
+```
+
+> **Why an extra?** Keeping Gradio and `soundfile` in an optional extra prevents Typer dependency conflicts triggered by multilingual SpaCy add-ons such as `russian-text-stresser`. Because this fork is English-only, the base package stays lean while letting you opt into the UI when needed.
+
 Alternatively, you can install from source:
 ```shell
 # conda create -yn chatterbox python=3.11
@@ -78,10 +86,6 @@ french_text = "Bonjour, comment ça va? Ceci est le modèle de synthèse vocale 
 wav_french = multilingual_model.generate(spanish_text, language_id="fr")
 ta.save("test-french.wav", wav_french, model.sr)
 
-chinese_text = "你好，今天天气真不错，希望你有一个愉快的周末。"
-wav_chinese = multilingual_model.generate(chinese_text, language_id="zh")
-ta.save("test-chinese.wav", wav_chinese, model.sr)
-
 # If you want to synthesize with a different voice, specify one or more audio prompts
 AUDIO_PROMPTS = ["YOUR_FILE.wav", "ANOTHER_TAKE.wav"]
 wav = model.generate(text, audio_prompt_path=AUDIO_PROMPTS)
@@ -108,8 +112,8 @@ You can fine-tune the model with LoRA adapters using `scripts/train_lora.py`:
 python scripts/train_lora.py --manifest train_list.txt --device cuda
 ```
 
-# Supported Lanugage
-Currenlty only English.
+# Supported Language
+Currently only English.
 
 # Acknowledgements
 - [Cosyvoice](https://github.com/FunAudioLLM/CosyVoice)

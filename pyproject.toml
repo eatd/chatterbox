@@ -26,6 +26,12 @@ dependencies = [
 
 ]
 
+[project.optional-dependencies]
+ui = [
+    "gradio>=4.44.0,<5",
+    "soundfile>=0.12.1"
+]
+
 [project.urls]
 Homepage = "https://github.com/resemble-ai/chatterbox"
 Repository = "https://github.com/resemble-ai/chatterbox"
